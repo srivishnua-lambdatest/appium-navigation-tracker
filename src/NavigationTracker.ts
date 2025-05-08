@@ -24,13 +24,31 @@ interface ElementInfo {
   className?: string;
 }
 
+// Add type definitions for test framework globals
+declare global {
+  namespace NodeJS {
+    interface Global {
+      currentTest?: { title: string };
+      expect?: any;
+      test?: any;
+      jasmine?: {
+        getEnv: () => {
+          currentSpec?: {
+            description: string;
+          }
+        }
+      };
+    }
+  }
+}
+
 export class NavigationTracker {
   private driver: any; // Appium driver instance
   private currentScreen: string = '';
   private navigations: Navigation[] = [];
-  private testName: string;
-  private specFile: string;
-  private sessionId: string;
+  private testName: string = '';
+  private specFile: string = '';
+  private sessionId: string = '';
   private resultsDir: string;
   private isAndroid: boolean = false;
   private isIOS: boolean = false;
@@ -57,14 +75,14 @@ export class NavigationTracker {
     'WebView': ['url', 'find']
   };
 
-  constructor(driver: any, testName: string, specFile: string, sessionId: string) {
+  constructor(driver: any) {
     this.driver = driver;
-    this.testName = testName;
-    this.specFile = specFile;
-    this.sessionId = sessionId;
     this.resultsDir = path.join(process.cwd(), 'test-results');
     
-    console.log('[NavigationTracker] Initializing with:', { testName, specFile, sessionId });
+    // Extract sessionId from driver
+    this.extractSessionId();
+    
+    console.log('[NavigationTracker] Initializing with driver');
     
     // Reset test-results directory
     this.resetResultsDirectory();
@@ -74,6 +92,33 @@ export class NavigationTracker {
     
     // Initialize action to screen mapping
     this.initializeActionScreenMap();
+  }
+
+  /**
+   * Extract session ID from the driver instance
+   */
+  private extractSessionId() {
+    try {
+      // Try different ways to get the session ID based on the driver implementation
+      if (this.driver.sessionId) {
+        this.sessionId = this.driver.sessionId;
+      } else if (this.driver.session && this.driver.session.id) {
+        this.sessionId = this.driver.session.id;
+      } else if (this.driver.caps && this.driver.caps.sessionId) {
+        this.sessionId = this.driver.caps.sessionId;
+      } else {
+        // Generate a timestamp-based session ID as fallback
+        this.sessionId = `session_${Date.now()}`;
+      }
+      
+      console.log(`[NavigationTracker] Session ID: ${this.sessionId}`);
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      console.error('[NavigationTracker] Error extracting session ID:', errorMsg);
+      
+      // Fallback to timestamp-based ID
+      this.sessionId = `session_${Date.now()}`;
+    }
   }
 
   private resetResultsDirectory() {
@@ -134,6 +179,114 @@ export class NavigationTracker {
     
     // Set initial screen
     this.currentScreen = 'Home Screen';
+  }
+
+  /**
+   * Get the current executing test file path
+   * This attempts to find the spec file that's currently running by examining the call stack
+   */
+  private getCallingSpecFile(): string {
+    try {
+      // Get the call stack
+      const stackTrace = new Error().stack || '';
+      const stackLines = stackTrace.split('\n');
+      
+      // Look for a line that contains a test file path (typically contains "spec.js" or "test.js")
+      for (const line of stackLines) {
+        const match = line.match(/\((.+?)(spec|test)\.(js|ts):/i);
+        if (match) {
+          const fullPath = match[1] + match[2] + '.' + match[3];
+          return path.basename(fullPath);
+        }
+      }
+
+      // If we can't find a specific test file, try to get any file from the test directory
+      for (const line of stackLines) {
+        const match = line.match(/\((.+?)\/test(s)?\/(.+?)\.(js|ts):/i);
+        if (match) {
+          const fullPath = match[0].replace(/^\(|\)$/g, '').split(':')[0];
+          return path.basename(fullPath);
+        }
+      }
+
+      // Additional pattern for mocha/jasmine test files that might not have "test" or "spec" in the name
+      for (const line of stackLines) {
+        // Look for any JS/TS file in a test-related directory
+        const match = line.match(/\((.+?)\/(tests?|specs?|e2e)\/(.+?)\.(js|ts):/i);
+        if (match) {
+          const fullPath = match[0].replace(/^\(|\)$/g, '').split(':')[0];
+          return path.basename(fullPath);
+        }
+      }
+
+      // Fallback: Return unknown if we couldn't determine
+      return 'unknown_spec_file';
+    } catch (error) {
+      console.error('[NavigationTracker] Error getting spec file name:', error);
+      return 'error_determining_spec_file';
+    }
+  }
+
+  /**
+   * Get the current executing test name
+   * This attempts to find the test name that's currently running by examining global objects
+   */
+  private getTestName(): string {
+    try {
+      // Try to detect from global context
+      // For Mocha
+      if ((global as any).currentTest?.title) {
+        return (global as any).currentTest.title;
+      }
+      
+      // For Jest
+      if ((global as any).expect && typeof (global as any).test === 'function') {
+        // Try to get Jest's current test description if available
+        if ((global as any).expect.getState && typeof (global as any).expect.getState === 'function') {
+          const state = (global as any).expect.getState();
+          if (state && state.currentTestName) {
+            return state.currentTestName;
+          }
+        }
+        return `test_${Date.now()}`;
+      }
+
+      // For Jasmine
+      if ((global as any).jasmine) {
+        const jasmineEnv = (global as any).jasmine.getEnv();
+        const currentSpec = jasmineEnv.currentSpec;
+        if (currentSpec && currentSpec.description) {
+          return currentSpec.description;
+        }
+      }
+
+      // For WebdriverIO
+      if ((global as any).browser && (global as any).browser.config) {
+        const config = (global as any).browser.config;
+        if (config.currentTest) {
+          return config.currentTest;
+        }
+      }
+
+      // Try to extract from Error stack
+      const stack = new Error().stack || '';
+      const lines = stack.split('\n');
+      
+      // Look for lines that might contain test names from common test frameworks
+      for (const line of lines) {
+        // Look for "it" or "test" function calls which usually define test cases
+        const match = line.match(/\s+(it|test)\s*\(\s*['"](.+?)['"]/i);
+        if (match) {
+          return match[2]; // Return the test description
+        }
+      }
+
+      // Fallback: Generate a timestamp-based name
+      return `test_${new Date().toISOString().replace(/[:.]/g, '_')}`;
+    } catch (error) {
+      console.error('[NavigationTracker] Error getting test name:', error);
+      return `test_${Date.now()}`;
+    }
   }
 
   /**
@@ -362,9 +515,13 @@ export class NavigationTracker {
       console.log('[NavigationTracker] Saving navigation results...');
       console.log(`[NavigationTracker] Total navigation events: ${this.navigations.length}`);
       
+      // Dynamically get test name and spec file if they weren't provided
+      const testName = this.getTestName();
+      const specFile = this.getCallingSpecFile();
+      
       const result: TestResult = {
-        spec_file: this.specFile,
-        test_name: this.testName,
+        spec_file: specFile,
+        test_name: testName,
         session_id: this.sessionId,
         navigations: this.navigations,
         timestamp: new Date().toISOString(),
@@ -379,6 +536,7 @@ export class NavigationTracker {
 
       const filePath = path.join(this.resultsDir, 'navigation-tracking.json');
       console.log(`[NavigationTracker] Saving results to: ${filePath}`);
+      console.log(`[NavigationTracker] Test: ${testName}, Spec: ${specFile}`);
       
       fs.writeFileSync(filePath, JSON.stringify(result, null, 2));
       console.log('[NavigationTracker] Results saved successfully');
@@ -388,8 +546,11 @@ export class NavigationTracker {
       
       // Try one more time with a simpler approach
       try {
+        // Dynamically get spec file if it wasn't provided
+        const specFile = this.getCallingSpecFile();
+        
         const simpleResult = {
-          spec_file: this.specFile,
+          spec_file: specFile,
           navigations: this.navigations,
           timestamp: new Date().toISOString()
         };

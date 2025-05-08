@@ -10,6 +10,8 @@ A powerful utility package to track screen navigations in mobile app tests using
 - 🧠 Smart screen name detection using multiple strategies
 - 🚀 Framework-agnostic design - works with any JavaScript Appium setup
 - ⚡ Zero-config mode - works without modifying your tests
+- 🔍 Automatic test and spec name detection - no manual configuration needed
+- 🆔 Automatic session ID extraction from the driver
 
 ## Installation
 
@@ -45,11 +47,13 @@ The auto-configure module automatically:
 2. Hooks into navigation events
 3. Tracks screen transitions
 4. Saves results at the end of your test
+5. Identifies test names and spec files automatically
 
 No additional code changes required! The tracker will automatically:
 - Hook into your driver's navigation methods
 - Track screen changes
 - Save results when your tests complete
+- Detect test names and spec files from the execution context
 
 ### Example Auto-Configuration
 
@@ -70,13 +74,13 @@ If you need more control over the navigation tracking, you can use the manual in
 ```javascript
 const { NavigationTracker } = require("appium-navigation-tracker");
 
-// Initialize the tracker with your Appium driver
-const navigationTracker = new NavigationTracker(
-  driver,                // Your Appium driver instance
-  "My Test Name",        // Name of your test
-  "test_file.js",        // Name of the test file
-  driver.sessionId       // Session ID (optional)
-);
+// Initialize the tracker with your Appium driver - that's all you need!
+const navigationTracker = new NavigationTracker(driver);
+
+// The tracker automatically extracts:
+// - Session ID from the driver
+// - Test name from the current test context
+// - Spec file from the execution stack
 
 // Track navigation at any point
 await navigationTracker.trackNavigation();
@@ -232,13 +236,15 @@ You can customize the navigation tracker with these environment variables:
 ### Constructor
 
 ```javascript
-new NavigationTracker(driver, testName, specFile, sessionId)
+new NavigationTracker(driver)
 ```
 
 - `driver`: Your Appium driver instance
-- `testName`: Name of your test (for reporting)
-- `specFile`: Name of your test file (for reporting)  
-- `sessionId`: Current Appium session ID (optional)
+
+All other information is automatically determined:
+- `sessionId`: Extracted from the driver instance
+- `testName`: Automatically detected from the test context
+- `specFile`: Automatically detected from the execution stack
 
 ### Methods
 
@@ -320,6 +326,8 @@ The auto-configuration module:
 3. Registers hooks into the test lifecycle to save results
 4. Detects element interactions to better identify screens
 5. Handles different frameworks' specific driver implementations automatically
+6. Automatically identifies test names and spec files from the execution context
+7. Extracts session ID directly from the driver instance
 
 This approach minimizes the code changes needed while providing reliable navigation tracking.
 
