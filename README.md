@@ -9,6 +9,7 @@ A powerful utility package to track screen navigations in mobile app tests using
 - 📊 Generates detailed navigation reports in JSON format
 - 🧠 Smart screen name detection using multiple strategies
 - 🚀 Framework-agnostic design - works with any JavaScript Appium setup
+- ⚡ Zero-config mode - works without modifying your tests
 
 ## Installation
 
@@ -16,7 +17,55 @@ A powerful utility package to track screen navigations in mobile app tests using
 npm install appium-navigation-tracker --save-dev
 ```
 
-## Quick Start
+## Zero-Config Usage (Recommended)
+
+Appium Navigation Tracker can automatically track screen transitions without requiring any changes to your test scripts. Simply configure it in your test setup file:
+
+### Using Environment Variables
+
+Add these to your environment variables or `.env` file:
+
+```
+NAVIGATION_TRACKER_ENABLED=true
+NAVIGATION_TRACKER_AUTO_SAVE=true
+```
+
+### Automatic Integration
+
+For most frameworks, simply add this line to your test setup file:
+
+```javascript
+// Add this to the top of your main test file or setup file
+require("appium-navigation-tracker/auto");
+```
+
+The auto-configure module automatically:
+
+1. Detects your Appium driver instance
+2. Hooks into navigation events
+3. Tracks screen transitions
+4. Saves results at the end of your test
+
+No additional code changes required! The tracker will automatically:
+- Hook into your driver's navigation methods
+- Track screen changes
+- Save results when your tests complete
+
+### Example Auto-Configuration
+
+```javascript
+// In your test setup file (e.g., wdio.conf.js, setup.js, etc.)
+process.env.NAVIGATION_TRACKER_ENABLED = "true";
+process.env.NAVIGATION_TRACKER_AUTO_SAVE = "true";
+require("appium-navigation-tracker/auto");
+
+// Rest of your normal test setup
+// ...
+```
+
+## Manual Integration (Optional)
+
+If you need more control over the navigation tracking, you can use the manual integration approach.
 
 ```javascript
 const { NavigationTracker } = require("appium-navigation-tracker");
@@ -36,50 +85,116 @@ await navigationTracker.trackNavigation();
 await navigationTracker.saveResults();
 ```
 
-## Framework Integration Guide
+## Framework-Specific Auto-Configuration
+
+### WebdriverIO
+
+In your wdio.conf.js file:
+
+```javascript
+// wdio.conf.js
+const { setupNavigationTracker } = require('appium-navigation-tracker/wdio');
+
+exports.config = {
+  // Your existing WebdriverIO config
+  
+  // Add these hooks
+  beforeSession: function() {
+    process.env.NAVIGATION_TRACKER_ENABLED = "true";
+  },
+  
+  before: function() {
+    setupNavigationTracker();
+  },
+  
+  afterTest: function() {
+    // Results are automatically saved
+  }
+};
+```
+
+### Mocha/Jasmine
+
+```javascript
+// In your test setup file
+const { setupNavigationTracker } = require('appium-navigation-tracker/mocha');
+
+before(function() {
+  setupNavigationTracker();
+});
+
+after(function() {
+  // Navigation results are automatically saved
+});
+```
+
+### Jest
+
+```javascript
+// In your jest setup file
+const { setupNavigationTracker } = require('appium-navigation-tracker/jest');
+
+beforeAll(() => {
+  setupNavigationTracker();
+});
+
+afterAll(() => {
+  // Navigation results are automatically saved
+});
+```
+
+## Advanced Integration (Optional)
+
+If you need more control over navigation tracking, these optional integrations can enhance the accuracy.
+
+### Enhanced Click Tracking
+
+For more accurate screen tracking, you can wrap click actions (optional but recommended):
+
+```javascript
+// Define once in your test helper
+async function enhancedClick(elementSelector, description) {
+  // The driver and navigationTracker are auto-detected
+  await global.navigationTracker.beforeClick(elementSelector);
+  await element(elementSelector).click();
+  await global.navigationTracker.afterClick();
+}
+
+// Use in your tests
+await enhancedClick('#login-button', 'login button');
+```
+
+### Manual Screen Recording
+
+Explicitly record screen changes if needed:
+
+```javascript
+// After an important UI change
+await global.navigationTracker.recordScreen('Login Screen');
+```
+
+## Framework Integration Examples
 
 ### Standard Appium with WD (Node.js)
 
 ```javascript
-const wd = require("wd");
-const { NavigationTracker } = require("appium-navigation-tracker");
+// Auto-configuration approach (recommended)
+require("appium-navigation-tracker/auto");
 
+const wd = require("wd");
 const driver = wd.promiseRemote('http://localhost:4723/wd/hub');
 
 async function runTest() {
   await driver.init(capabilities);
   
-  // Initialize tracker
-  const navigationTracker = new NavigationTracker(
-    driver,
-    "Sample Test",
-    "test.js",
-    driver.sessionId
-  );
+  // Navigate through the app normally
+  const loginButton = await driver.elementById('login_button');
+  await loginButton.click();
   
-  // Track initial navigation
-  await navigationTracker.trackNavigation();
-  
-  // Enhanced click function with navigation tracking
-  async function enhancedClick(elementId, description) {
-    // Tell the navigation tracker we're about to click
-    await navigationTracker.beforeClick(elementId);
-    
-    // Find and click the element
-    const element = await driver.elementById(elementId);
-    await element.click();
-    
-    // Tell tracker click is complete
-    await navigationTracker.afterClick();
-  }
-  
-  // Use the enhanced click function
-  await enhancedClick('login_button', 'Clicking login button');
-  
-  // Save navigation results at the end of your test
-  await navigationTracker.saveResults();
+  // Navigation is tracked automatically!
   
   await driver.quit();
+  // Results are saved automatically
 }
 
 runTest();
@@ -88,181 +203,29 @@ runTest();
 ### WebdriverIO Integration
 
 ```javascript
-const { NavigationTracker } = require("appium-navigation-tracker");
+// wdio.conf.js
+require("appium-navigation-tracker/auto");
 
+// Your test
 describe('My App Test', () => {
-  let navigationTracker;
-  
-  before(async () => {
-    // Initialize NavigationTracker with WebdriverIO's driver
-    navigationTracker = new NavigationTracker(
-      driver,
-      "WebdriverIO Test",
-      "wdio-test.js",
-      browser.sessionId
-    );
-    
-    // Add hooks to WebdriverIO's click command
-    const originalClick = browser.originals.click;
-    browser.overwriteCommand('click', async function (originalClickFn, selector) {
-      // Before click
-      const elementId = await $(selector).getAttribute('resource-id') || selector;
-      await navigationTracker.beforeClick(elementId);
-      
-      // Execute original click
-      await originalClickFn(selector);
-      
-      // After click
-      await navigationTracker.afterClick();
-    });
-  });
-  
   it('should navigate through the app', async () => {
-    // Your test code here
-    await navigationTracker.trackNavigation();
-    
     await $('~login_button').click();
-    // Navigation is automatically tracked due to the overwritten click command
-  });
-  
-  after(async () => {
-    // Save navigation results
-    await navigationTracker.saveResults();
+    // Navigation is automatically tracked
   });
 });
 ```
 
-### Protractor Integration
+## Configuration Options
 
-```javascript
-const { NavigationTracker } = require("appium-navigation-tracker");
+You can customize the navigation tracker with these environment variables:
 
-describe('My Protractor App Test', () => {
-  let navigationTracker;
-  
-  beforeAll(async () => {
-    // Initialize NavigationTracker with Protractor's browser
-    navigationTracker = new NavigationTracker(
-      browser.driver,
-      "Protractor Test",
-      "protractor-test.js",
-      browser.driver.getSession().then(session => session.getId())
-    );
-    
-    // Track initial navigation
-    await navigationTracker.trackNavigation();
-  });
-  
-  it('should navigate through the app', async () => {
-    // Helper function for enhanced clicking
-    async function enhancedClick(element, description) {
-      const elementId = await element.getAttribute('resource-id') || description;
-      await navigationTracker.beforeClick(elementId);
-      await element.click();
-      await navigationTracker.afterClick();
-    }
-    
-    // Use the enhanced click function
-    await enhancedClick(element(by.id('login_button')), 'login_button');
-  });
-  
-  afterAll(async () => {
-    // Save navigation results
-    await navigationTracker.saveResults();
-  });
-});
-```
-
-### Detox Integration
-
-```javascript
-const { NavigationTracker } = require("appium-navigation-tracker");
-const wd = require("wd");
-
-describe('My Detox Test', () => {
-  let navigationTracker;
-  let appiumDriver;
-  
-  beforeAll(async () => {
-    // Create an Appium driver instance that connects to the Detox server
-    appiumDriver = wd.promiseRemote({
-      hostname: 'localhost',
-      port: 4723,
-    });
-    
-    await appiumDriver.init({
-      platformName: device.getPlatform(),
-      automationName: device.getPlatform() === 'ios' ? 'XCUITest' : 'UiAutomator2',
-      deviceName: device.name,
-      app: device.getBundleId()
-    });
-    
-    // Initialize NavigationTracker
-    navigationTracker = new NavigationTracker(
-      appiumDriver,
-      "Detox Test",
-      "detox-test.js",
-      appiumDriver.sessionId
-    );
-    
-    // Track initial navigation
-    await navigationTracker.trackNavigation();
-  });
-  
-  it('should navigate through the app', async () => {
-    // Use Detox for test actions
-    await element(by.id('login_button')).tap();
-    
-    // Manually track navigation after Detox actions
-    await navigationTracker.trackNavigation();
-  });
-  
-  afterAll(async () => {
-    // Save navigation results
-    await navigationTracker.saveResults();
-    await appiumDriver.quit();
-  });
-});
-```
-
-### NightwatchJS Integration
-
-```javascript
-const { NavigationTracker } = require("appium-navigation-tracker");
-
-module.exports = {
-  before: async function(browser) {
-    // Initialize the navigation tracker
-    browser.navigationTracker = new NavigationTracker(
-      browser.driver,
-      "Nightwatch Test",
-      "nightwatch-test.js",
-      browser.sessionId
-    );
-    
-    // Track initial navigation
-    await browser.navigationTracker.trackNavigation();
-  },
-  
-  'My app test': async function(browser) {
-    // Helper function to enhance clicks with tracking
-    browser.enhancedClick = async function(selector, description) {
-      await browser.navigationTracker.beforeClick(selector);
-      await browser.click(selector);
-      await browser.navigationTracker.afterClick();
-    };
-    
-    // Use the enhanced click
-    await browser.enhancedClick('#login_button', 'login_button');
-  },
-  
-  after: async function(browser) {
-    // Save navigation results
-    await browser.navigationTracker.saveResults();
-    browser.end();
-  }
-};
-```
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `NAVIGATION_TRACKER_ENABLED` | Enable/disable navigation tracking | `true` |
+| `NAVIGATION_TRACKER_AUTO_SAVE` | Automatically save results | `true` |
+| `NAVIGATION_TRACKER_RESULTS_DIR` | Directory to save results | `./test-results` |
+| `NAVIGATION_TRACKER_MIN_INTERVAL` | Minimum interval between checks (ms) | `300` |
+| `NAVIGATION_TRACKER_VERBOSE` | Enable verbose logging | `false` |
 
 ## API Reference
 
@@ -348,30 +311,42 @@ The tracker saves a JSON file with the following structure:
 }
 ```
 
+## How It Works
+
+The auto-configuration module:
+
+1. Monkey-patches the Appium driver methods that trigger navigation events
+2. Sets up listeners for screen changes
+3. Registers hooks into the test lifecycle to save results
+4. Detects element interactions to better identify screens
+5. Handles different frameworks' specific driver implementations automatically
+
+This approach minimizes the code changes needed while providing reliable navigation tracking.
+
 ## Troubleshooting
 
 ### Screen Names Not Accurate
 
 If the tracker isn't detecting screen names correctly:
 
-1. Use the `recordUserAction` method to explicitly tell the tracker which screen you're on
-2. Add more screen identifiers to the detection logic for your specific app
-3. Check if the page source is accessible from your test environment
+1. Set `NAVIGATION_TRACKER_VERBOSE=true` to see detailed logging
+2. Use the manual integration approach for more control
+3. Consider adding custom screen identification rules
 
 ### No Navigation Events Recorded
 
 If no navigation events are being recorded:
 
-1. Make sure you're calling `trackNavigation()` after screen transitions
-2. Verify that `beforeClick` and `afterClick` are called properly
-3. Add a delay after actions to allow the UI to update before tracking
+1. Make sure `NAVIGATION_TRACKER_ENABLED=true` is set
+2. Check if your framework has a supported auto-configuration
+3. Verify that the auto-configuration is imported before your test code runs
 
 ### Remote Testing Services
 
 When using cloud testing services like LambdaTest, BrowserStack, etc:
 
 1. Some methods like shell commands might be restricted
-2. Prefer using the Element ID tracking approach shown in the examples
+2. Auto-configuration usually works but may need framework-specific setup
 3. Make sure to set proper timeouts as remote executions can be slower
 
 ## License
